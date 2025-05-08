@@ -184,8 +184,9 @@
             };
             let uploadedImages = []; 
 
-            const frontLayout = ['2','3','3','2','2','3','3','2','4','5','5','4','4','5','5','4'];
-            const backLayout =  ['1','8','8','1','1','8','8','1','6','7','7','6','6','7','7','6'];
+            // Updated layouts
+            const frontLayout = ['1','1','3','5','2','2','3','4','3','3','2','2','1','1','4','5'];
+            const backLayout =  ['6','7','8','6','6','7','8','6','7','8','5','4','7','8','5','4'];
 
             const batchUploadArea = document.getElementById('image-batch-upload-area');
             const batchUploadInput = document.getElementById('image-batch-upload-input');
@@ -197,7 +198,6 @@
             const frontGridContainer = document.getElementById('front-grid');
             const backGridContainer = document.getElementById('back-grid');
             const cutLinesToggle = document.getElementById('show-cut-lines-toggle');
-            // document.getElementById('footer-year').textContent = new Date().getFullYear(); // Removed this line
 
             function generatePlaceholderImage(index, canvasSize = 200) {
                 const canvas = document.createElement('canvas');
