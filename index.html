@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>2D魔術方塊摺紙拼圖生成系統</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" integrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap');
+        
+        body {
+            font-family: 'Noto Sans TC', sans-serif;
+            background-color: #f0f4f8;
+        }
+        
+        .grid-cell {
+            aspect-ratio: 1/1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: rgba(0,0,0,0.7);
+            border: 1px solid #e2e8f0;
+            background-size: cover;
+            background-position: center center;
+            background-repeat: no-repeat;
+            overflow: hidden;
+            cursor: pointer; /* Indicate cells are clickable */
+            transition: box-shadow 0.2s ease-in-out;
+            position: relative; /* For custom borders if needed */
+        }
+        .grid-cell:hover {
+            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.7); /* Highlight on hover */
+        }
+                
+        .print-button {
+            transition: all 0.3s ease;
+        }
+        .print-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        .print-button:active { transform: translateY(0); }
+        
+        @media print {
+            .no-print { display: none !important; }
+            .print-only { display: block !important; }
+            .print-container { width: 100%; max-width: 100%; margin: 0; padding: 0; -webkit-print-color-adjust: exact !important; color-adjust: exact !important; }
+            .print-grid-container { page-break-after: always; margin-bottom: 1cm; }
+            body { background-color: white; }
+            .grid-cell { border: 0.5px solid #999 !important; font-size: 1rem; }
+            .main-grid-border { border: 1.5px solid #333 !important; }
+            .grid-cell.cut-line-right {
+                border-right-width: 1px !important; /* Thinner for print */
+                border-right-style: dashed !important;
+                border-right-color: red !important;
+            }
+        }
+        
+        .print-only { display: none; }
+        
+        .image-upload-area { border: 2px dashed #cbd5e1; border-radius: 0.5rem; padding: 2rem 1rem; text-align: center; cursor: pointer; transition: background-color 0.2s; }
+        .image-upload-area:hover, .image-upload-area.dragover { background-color: #e2e8f0; }
+        .image-upload-area input[type="file"] { display: none; }
+
+        .image-slot { border: 1px solid #d1d5db; border-radius: 0.375rem; padding: 0.75rem; background-color: #f9fafb; transition: box-shadow 0.3s ease; }
+        .image-slot.highlighted { box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.8); /* Green highlight */ transform: scale(1.02); }
+        .image-slot img.preview-image { width: 100%; height: 100px; object-fit: contain; margin-bottom: 0.5rem; border: 1px solid #e5e7eb; background-color: #fff; }
+        .action-button { padding: 0.3rem 0.6rem; font-size: 0.75rem; margin-top: 0.5rem; margin-right: 0.25rem; }
+        .main-grid-border { border: 2px solid #374151; }
+
+        .cut-line-right {
+            border-right-width: 2px !important;
+            border-right-style: dashed !important;
+            border-right-color: red !important;
+        }
+
+    </style>
+</head>
+<body>
+    <div class="min-h-screen flex flex-col">
+        <header class="bg-gradient-to-r from-purple-600 to-indigo-700 text-white py-6 shadow-lg no-print">
+            <div class="container mx-auto px-4">
+                <h1 class="text-3xl font-bold text-center"><i class="fa-solid fa-puzzle-piece mr-2"></i>2D魔術方塊摺紙拼圖生成系統</h1>
+                <p class="text-center mt-2 text-indigo-100">DIY 雙面4x4方塊，點擊預覽格可跳至對應圖片</p>
+            </div>
+        </header>
+
+        <main class="flex-grow container mx-auto px-4 py-8">
+            <!-- Image Upload Section -->
+            <div class="bg-white rounded-lg shadow-lg p-6 mb-8 no-print">
+                <h2 class="text-xl font-semibold mb-2 text-gray-800"><i class="fa-solid fa-images mr-2"></i>上傳圖片</h2>
+                <p class="text-sm text-gray-600 mb-3">您可以批次上傳多張圖片，或針對特定位置替換單張圖片。</p>
+                <div class="image-upload-area mb-6" id="image-batch-upload-area">
+                    <input type="file" accept="image/*" id="image-batch-upload-input" multiple>
+                    <i class="fa-solid fa-images fa-3x text-gray-400 mx-auto"></i>
+                    <p class="mt-2 text-sm text-gray-600">點擊此處或拖曳圖片至此 (批次上傳，最多8張)</p>
+                    <p class="text-xs text-gray-500">若未上傳圖片，將使用程式產生的圖樣</p>
+                </div>
+                <div class="flex justify-between items-center mb-4">
+                    <p class="text-sm text-gray-600">已設定 <span id="uploaded-count" class="font-semibold">0</span>/8 張圖片。</p>
+                    <button id="clear-all-images" class="print-button bg-red-500 hover:bg-red-600 text-white font-medium py-1 px-3 rounded-lg text-sm action-button">
+                        <i class="fa-solid fa-trash-can mr-1"></i>清除所有自訂圖片
+                    </button>
+                </div>
+                <div id="image-adjustment-container" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <!-- Image adjustment slots -->
+                </div>
+            </div>
+            <input type="file" accept="image/*" id="single-image-replace-input" style="display: none;">
+
+
+            <!-- Interactive Previews -->
+            <div class="bg-white rounded-lg shadow-lg p-6 mb-8 no-print">
+                <h2 class="text-xl font-semibold mb-4 text-gray-800"><i class="fa-solid fa-eye mr-2"></i>預覽拼圖 (點擊方格可快速跳至圖片區)</h2>
+                
+                <div class="mb-4 flex items-center justify-center">
+                    <input type="checkbox" id="show-cut-lines-toggle" class="mr-2 h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500" checked>
+                    <label for="show-cut-lines-toggle" class="text-sm text-gray-700">顯示/列印剪裁參考虛線</label>
+                </div>
+
+                <div class="flex flex-col md:flex-row gap-6">
+                    <div class="md:w-1/2">
+                        <h3 class="font-medium text-lg mb-2 text-center">正面預覽</h3>
+                        <div class="preview-container bg-gray-100 rounded-lg p-2">
+                            <div class="grid grid-cols-4 gap-0 w-full max-w-sm mx-auto main-grid-border" id="front-grid"></div>
+                        </div>
+                    </div>
+                    <div class="md:w-1/2">
+                        <h3 class="font-medium text-lg mb-2 text-center">背面預覽</h3>
+                        <div class="preview-container bg-gray-100 rounded-lg p-2">
+                            <div class="grid grid-cols-4 gap-0 w-full max-w-sm mx-auto main-grid-border" id="back-grid"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="mt-6 text-center">
+                    <button id="print-button" class="print-button bg-green-500 hover:bg-green-600 text-white font-medium py-2 px-6 rounded-lg flex items-center mx-auto">
+                        <i class="fa-solid fa-print mr-2"></i>列印拼圖
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Instructions -->
+            <div class="bg-white rounded-lg shadow-lg p-6 mb-8 no-print">
+                <h2 class="text-xl font-semibold mb-4 text-gray-800"><i class="fa-solid fa-book-open mr-2"></i>製作說明</h2>
+                <div class="space-y-3 text-gray-700 text-sm">
+                    <p>1. <strong>準備圖片：</strong> 上傳最多8張圖片 (可批次上傳或單張替換)，或使用自動產生的圖樣。下方會顯示目前使用的圖樣。點擊上方預覽方格可以快速跳到對應圖樣的區塊。</p>
+                    <p>2. <strong>列印：</strong> 點擊「列印拼圖」。使用A4/Letter紙張（建議稍厚），設定「雙面列印」，並確保正反面正確對齊（通常選「沿長邊翻轉」）。若有顯示參考虛線，它們也會被列印出來。</p>
+                    <p>3. <strong>剪裁與預摺：</strong> 沿4x4方塊外框剪下。沿內部格線（水平三條、垂直三條）向正反兩方向預摺，使其易於彎曲。紅色虛線為特定摺疊或剪裁的參考。</p>
+                    <p>4. <strong>摺疊遊玩：</strong> 這是一個Tetraflexagon。目標是摺出8種不同的2x2圖案面。可搜尋「tetraflexagon folding instructions」獲取摺疊技巧。</p>
+                </div>
+            </div>
+            
+            <!-- Printable Version -->
+            <div class="print-only print-container">
+                <div class="print-grid-container mb-4">
+                    <h2 class="text-xl font-bold mb-2 text-center">2D魔術方塊摺紙拼圖 - 正面</h2>
+                    <div class="grid grid-cols-4 gap-0 w-full max-w-lg mx-auto main-grid-border" id="print-front-grid"></div>
+                    <p class="text-center mt-2 text-xs text-gray-500">正面。列印後沿外框剪下。內部格線為摺疊參考。</p>
+                </div>
+                <div class="print-grid-container">
+                    <h2 class="text-xl font-bold mb-2 text-center">2D魔術方塊摺紙拼圖 - 背面</h2>
+                    <div class="grid grid-cols-4 gap-0 w-full max-w-lg mx-auto main-grid-border" id="print-back-grid"></div>
+                    <p class="text-center mt-2 text-xs text-gray-500">背面。確保與正面正確對齊列印。</p>
+                </div>
+            </div>
+        </main>
+
+        <footer class="bg-gray-800 text-white py-4 no-print">
+            <div class="container mx-auto px-4 text-center text-sm">
+                <p>Copyright © Liyuchiutiger Gongminshen</p>
+            </div>
+        </footer>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const NUM_IMAGES = 8;
+            const DEFAULT_IMG_SETTINGS = {
+                src: null, 
+                isCustom: false, 
+            };
+            let uploadedImages = []; 
+
+            const frontLayout = ['2','3','3','2','2','3','3','2','4','5','5','4','4','5','5','4'];
+            const backLayout =  ['1','8','8','1','1','8','8','1','6','7','7','6','6','7','7','6'];
+
+            const batchUploadArea = document.getElementById('image-batch-upload-area');
+            const batchUploadInput = document.getElementById('image-batch-upload-input');
+            const singleReplaceInput = document.getElementById('single-image-replace-input');
+            const adjustmentContainer = document.getElementById('image-adjustment-container');
+            const clearAllButton = document.getElementById('clear-all-images');
+            const printButton = document.getElementById('print-button');
+            const uploadedCountSpan = document.getElementById('uploaded-count');
+            const frontGridContainer = document.getElementById('front-grid');
+            const backGridContainer = document.getElementById('back-grid');
+            const cutLinesToggle = document.getElementById('show-cut-lines-toggle');
+            // document.getElementById('footer-year').textContent = new Date().getFullYear(); // Removed this line
+
+            function generatePlaceholderImage(index, canvasSize = 200) {
+                const canvas = document.createElement('canvas');
+                canvas.width = canvasSize;
+                canvas.height = canvasSize;
+                const ctx = canvas.getContext('2d');
+                
+                const colors = ['#FFADAD', '#FFD6A5', '#FDFFB6', '#CAFFBF', '#9BF6FF', '#A0C4FF', '#BDB2FF', '#FFC6FF'];
+                const bgColor = colors[index % colors.length];
+                const fgColor = '#555';
+
+                ctx.fillStyle = bgColor;
+                ctx.fillRect(0, 0, canvasSize, canvasSize);
+                ctx.strokeStyle = fgColor;
+                ctx.lineWidth = canvasSize / 20;
+
+                switch (index % 8) {
+                    case 0: 
+                        for (let i = 0; i < 5; i++) { ctx.beginPath(); ctx.moveTo(0, (i * canvasSize / 5) + (canvasSize / 10)); ctx.lineTo(canvasSize, (i * canvasSize / 5) + (canvasSize / 10)); ctx.stroke(); } break;
+                    case 1: 
+                        ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(canvasSize,canvasSize); ctx.stroke();
+                        ctx.beginPath(); ctx.moveTo(canvasSize,0); ctx.lineTo(0,canvasSize); ctx.stroke(); break;
+                    case 2: 
+                        ctx.beginPath(); ctx.arc(canvasSize/2, canvasSize/2, canvasSize/3, 0, Math.PI*2); ctx.stroke(); break;
+                    case 3: 
+                        for (let i = 1; i < 3; i++) { ctx.beginPath(); ctx.moveTo(i*canvasSize/3, 0); ctx.lineTo(i*canvasSize/3, canvasSize); ctx.stroke(); ctx.beginPath(); ctx.moveTo(0, i*canvasSize/3); ctx.lineTo(canvasSize, i*canvasSize/3); ctx.stroke(); } break;
+                    case 4: 
+                        ctx.fillStyle = fgColor;
+                        for(let r=0; r<3; r++) for(let c=0; c<3; c++) { ctx.beginPath(); ctx.arc((c+0.5)*canvasSize/3, (r+0.5)*canvasSize/3, canvasSize/12, 0, Math.PI*2); ctx.fill(); } break;
+                    case 5: 
+                        ctx.beginPath(); ctx.moveTo(canvasSize/2, canvasSize/6); ctx.lineTo(canvasSize*5/6, canvasSize*5/6); ctx.lineTo(canvasSize/6, canvasSize*5/6); ctx.closePath(); ctx.stroke(); break;
+                    case 6: 
+                        for(let i=0; i<3; i++) { let y = (i+1)*canvasSize/4; ctx.beginPath(); ctx.moveTo(canvasSize/4, y-canvasSize/8); ctx.lineTo(canvasSize/2, y); ctx.lineTo(canvasSize*3/4, y-canvasSize/8); ctx.stroke(); } break;
+                    case 7: 
+                        for(let i=0; i<3; i++) { let s = canvasSize - (i * canvasSize/3); let o = (canvasSize - s)/2; ctx.strokeRect(o,o,s,s); } break;
+                }
+                ctx.fillStyle = 'rgba(0,0,0,0.6)';
+                ctx.font = `bold ${canvasSize/5}px sans-serif`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(index + 1, canvasSize / 2, canvasSize / 2);
+                return canvas.toDataURL();
+            }
+            
+            function initializeImageSlots() {
+                uploadedImages = [];
+                for (let i = 0; i < NUM_IMAGES; i++) {
+                    const placeholderSrc = generatePlaceholderImage(i);
+                    uploadedImages.push({ ...DEFAULT_IMG_SETTINGS, src: placeholderSrc, isCustom: false });
+                }
+                updateUploadedCountDisplay();
+                renderAdjustmentControls();
+                refreshAllGrids();
+            }
+
+            function updateUploadedCountDisplay() {
+                const customCount = uploadedImages.filter(img => img.isCustom).length;
+                uploadedCountSpan.textContent = `${customCount} (自訂) / ${NUM_IMAGES - customCount} (預設)`;
+            }
+
+            batchUploadArea.addEventListener('click', () => batchUploadInput.click());
+            batchUploadArea.addEventListener('dragover', (e) => { e.preventDefault(); batchUploadArea.classList.add('dragover'); });
+            batchUploadArea.addEventListener('dragleave', () => batchUploadArea.classList.remove('dragover'));
+            batchUploadArea.addEventListener('drop', (e) => { e.preventDefault(); batchUploadArea.classList.remove('dragover'); if (e.dataTransfer.files) handleBatchUpload(e.dataTransfer.files); });
+            batchUploadInput.addEventListener('change', (e) => { if (e.target.files) handleBatchUpload(e.target.files); e.target.value = null; });
+
+            singleReplaceInput.addEventListener('change', (e) => {
+                const file = e.target.files[0];
+                const replaceIndex = parseInt(e.target.dataset.replaceIndex);
+
+                if (file && file.type.startsWith('image/') && !isNaN(replaceIndex)) {
+                    const reader = new FileReader();
+                    reader.onload = (re) => {
+                        uploadedImages[replaceIndex] = { 
+                            ...DEFAULT_IMG_SETTINGS,
+                            src: re.target.result, 
+                            isCustom: true 
+                        };
+                        renderAdjustmentControls(); 
+                        refreshAllGrids(); 
+                        updateUploadedCountDisplay();
+                    };
+                    reader.readAsDataURL(file);
+                }
+                e.target.value = null; 
+            });
+
+            function handleBatchUpload(files) {
+                let filesToProcess = Array.from(files);
+                let imageSlotCursor = 0; 
+
+                filesToProcess.forEach((file, fileIndex) => {
+                    if (fileIndex >= NUM_IMAGES) return; 
+                    if (!file.type.startsWith('image/')) return;
+
+                    let targetIndex = -1;
+                    for(let i = 0; i < NUM_IMAGES; i++) {
+                        let checkIdx = (imageSlotCursor + i) % NUM_IMAGES;
+                        if (!uploadedImages[checkIdx].isCustom) {
+                            targetIndex = checkIdx;
+                            break;
+                        }
+                    }
+                    if (targetIndex === -1) targetIndex = imageSlotCursor % NUM_IMAGES; 
+                    
+                    imageSlotCursor = (targetIndex + 1) % NUM_IMAGES;
+
+                    const reader = new FileReader();
+                    reader.onload = (eventReader) => { 
+                        uploadedImages[targetIndex] = { ...DEFAULT_IMG_SETTINGS, src: eventReader.target.result, isCustom: true };
+                        renderAdjustmentControls(); refreshAllGrids(); updateUploadedCountDisplay();
+                    };
+                    reader.readAsDataURL(file);
+                });
+                 if (files.length > 0 && filesToProcess.filter(f => f.type.startsWith('image/')).length === 0) {
+                    alert("未偵測到有效的圖片檔案。");
+                }
+            }
+            
+            function highlightAdjustmentSlot(imageSlotIndex) {
+                document.querySelectorAll('.image-slot').forEach(slot => slot.classList.remove('highlighted'));
+                const targetSlot = document.getElementById(`image-slot-${imageSlotIndex}`);
+                if (targetSlot) {
+                    targetSlot.classList.add('highlighted');
+                    targetSlot.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                }
+            }
+
+            function renderAdjustmentControls() {
+                adjustmentContainer.innerHTML = '';
+                uploadedImages.forEach((imgData, index) => {
+                    const slot = document.createElement('div');
+                    slot.className = 'image-slot';
+                    slot.id = `image-slot-${index}`; 
+                    
+                    slot.innerHTML = `
+                        <p class="text-sm font-medium text-gray-700 mb-1">圖樣 ${index + 1} ${imgData.isCustom ? '(自訂)' : '(預設)'}</p>
+                        <img src="${imgData.src}" alt="預覽 ${index + 1}" class="preview-image">
+                        <div class="mt-2 flex flex-wrap items-center">
+                            <button data-index="${index}" class="replace-image-btn print-button bg-yellow-500 hover:bg-yellow-600 text-white action-button rounded"><i class="fa-solid fa-image mr-1"></i>替換圖片</button>
+                            ${imgData.isCustom ? `<button data-index="${index}" class="clear-image-btn print-button bg-gray-400 hover:bg-gray-500 text-white action-button rounded"><i class="fa-solid fa-arrow-rotate-left mr-1"></i>改回預設</button>` : ''}
+                        </div>
+                    `;
+                    adjustmentContainer.appendChild(slot);
+                });
+
+                document.querySelectorAll('.replace-image-btn').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        const idx = parseInt(e.currentTarget.dataset.index); // Use currentTarget for delegated events
+                        singleReplaceInput.dataset.replaceIndex = idx; 
+                        singleReplaceInput.click();
+                    });
+                });
+
+                document.querySelectorAll('.clear-image-btn').forEach(btn => { 
+                    btn.addEventListener('click', (e) => {
+                        const idx = parseInt(e.currentTarget.dataset.index); // Use currentTarget
+                        uploadedImages[idx] = { ...DEFAULT_IMG_SETTINGS, src: generatePlaceholderImage(idx), isCustom: false };
+                        renderAdjustmentControls(); refreshAllGrids(); updateUploadedCountDisplay();
+                    });
+                });
+            }
+            
+            function generateGrid(containerEl, layoutPattern) {
+                if (!containerEl) return;
+                containerEl.innerHTML = '';
+                const showCutLines = cutLinesToggle.checked;
+                
+                for (let r = 0; r < 4; r++) { // r for row index (0-3)
+                    for (let c = 0; c < 4; c++) { // c for column index (0-3)
+                        const cell = document.createElement('div');
+                        cell.className = 'grid-cell';
+                        const layoutIndex = r * 4 + c;
+                        const cellValue = layoutPattern[layoutIndex]; 
+                        const imageSlotIndex = parseInt(cellValue) - 1;
+                        
+                        cell.dataset.imageSlotIndex = imageSlotIndex; 
+                        cell.addEventListener('click', () => highlightAdjustmentSlot(imageSlotIndex));
+
+                        if (imageSlotIndex >= 0 && imageSlotIndex < NUM_IMAGES && uploadedImages[imageSlotIndex]) {
+                            const imgData = uploadedImages[imageSlotIndex];
+                            cell.style.backgroundImage = `url('${imgData.src}')`;
+                            cell.textContent = '';
+                        } else { 
+                            cell.style.backgroundImage = 'none';
+                            cell.style.backgroundColor = (r + c) % 2 === 0 ? 'rgba(0,0,0,0.03)' : 'rgba(0,0,0,0.01)';
+                            cell.textContent = cellValue;
+                        }
+
+                        cell.classList.remove('cut-line-right'); 
+                        if (showCutLines) {
+                            if (c < 3 && (r === 1 || r === 2)) { 
+                                cell.classList.add('cut-line-right');
+                            }
+                        }
+                        containerEl.appendChild(cell);
+                    }
+                }
+            }
+
+            function refreshAllGrids() {
+                generateGrid(frontGridContainer, frontLayout);
+                generateGrid(backGridContainer, backLayout);
+                generateGrid(document.getElementById('print-front-grid'), frontLayout); 
+                generateGrid(document.getElementById('print-back-grid'), backLayout);   
+            }
+
+            clearAllButton.addEventListener('click', () => { 
+                initializeImageSlots();
+            });
+
+            printButton.addEventListener('click', () => {
+                const customImageCount = uploadedImages.filter(img => img.isCustom).length;
+                if (customImageCount === 0 && !cutLinesToggle.checked) { 
+                     if (!confirm(`您沒有上傳任何自訂圖片，且未勾選顯示參考虛線。將全部使用預設圖樣列印。確定嗎？`)) {
+                        return;
+                    }
+                } else if (customImageCount < NUM_IMAGES && !cutLinesToggle.checked) {
+                     if (!confirm(`您有 ${NUM_IMAGES - customImageCount} 張圖片將使用預設圖樣，且未勾選顯示參考虛線。確定要繼續列印嗎？`)) {
+                        return;
+                    }
+                } else if (customImageCount === 0 && cutLinesToggle.checked) {
+                     if (!confirm(`您沒有上傳任何自訂圖片，將使用預設圖樣並列印參考虛線。確定嗎？`)) {
+                        return;
+                    }
+                } else if (customImageCount < NUM_IMAGES && cutLinesToggle.checked) {
+                     if (!confirm(`您有 ${NUM_IMAGES - customImageCount} 張圖片將使用預設圖樣，並列印參考虛線。確定要繼續列印嗎？`)) {
+                        return;
+                    }
+                }
+                window.print();
+            });
+            
+            cutLinesToggle.addEventListener('change', refreshAllGrids);
+
+            initializeImageSlots();
+        });
+    </script>
+</body>
+</html>
